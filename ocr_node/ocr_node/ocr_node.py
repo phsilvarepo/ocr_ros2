@@ -10,9 +10,16 @@ class OCRNode(Node):
     def __init__(self):
         super().__init__('ocr_node')
         
-        # Pulling topics from environment variables for Docker flexibility
+        # Pulling settings from environment variables
         env_input = os.environ.get('INPUT_TOPIC', '/rgb')
         env_output = os.environ.get('OUTPUT_TOPIC', '/ocr_detection')
+        raw_conf = os.environ.get('CONFIDENCE_THRESHOLD', '0.6')
+        
+        try:
+            self.conf_threshold = float(raw_conf)
+        except ValueError:
+            self.get_logger().warn(f"Invalid CONFIDENCE_THRESHOLD '{raw_conf}'. Defaulting to 0.6")
+            self.conf_threshold = 0.6
         
         self.subscription = self.create_subscription(
             Image, 
@@ -28,10 +35,16 @@ class OCRNode(Node):
         )
 
         self.bridge = CvBridge()
-        # Initialize PaddleOCR (This will download models on first run)
+        
+        # Initialize PaddleOCR
+        # note: drop_score is Paddle's internal filter for the detection boxes
         self.ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
         
-        self.get_logger().info(f"OCR Node started. Listening on {env_input}...")
+        self.get_logger().info(
+            f"OCR Node started.\n"
+            f"Listening: {env_input}\n"
+            f"Threshold: {self.conf_threshold}"
+        )
 
     def image_callback(self, msg):
         # Convert ROS Image to OpenCV format
@@ -42,13 +55,20 @@ class OCRNode(Node):
         
         # Create the array container
         array_msg = OCRResultArray()
-        array_msg.header = msg.header # Essential for syncing with the original image
+        array_msg.header = msg.header 
 
         if results and results[0] is not None:
             for line in results[0]:
-                if line is None: continue
+                if line is None: 
+                    continue
                 
+                # Extract data from PaddleOCR output structure
                 box, (text, confidence) = line
+                
+                # --- CONFIDENCE THRESHOLD IMPLEMENTATION ---
+                if float(confidence) < self.conf_threshold:
+                    continue
+                
                 x_coords = [p[0] for p in box]
                 y_coords = [p[1] for p in box]
                 
@@ -67,19 +87,14 @@ class OCRNode(Node):
 
 # --- THE MAIN ENTRY POINT ---
 def main(args=None):
-    # 1. Initialize rclpy
     rclpy.init(args=args)
-    
-    # 2. Instantiate the node
     node = OCRNode()
     
     try:
-        # 3. Spin the node so it processes callbacks
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        # 4. Shutdown cleanly
         node.destroy_node()
         rclpy.shutdown()
 

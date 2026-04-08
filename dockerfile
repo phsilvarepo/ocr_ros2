@@ -42,6 +42,7 @@ RUN bash -c "\
 # 7. Environment variables
 ENV INPUT_TOPIC="/rgb"
 ENV OUTPUT_TOPIC="/ocr_detection"
+ENV CONFIDENCE_THRESHOLD="0.6"
 ENV FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 
 # 8. Setup sourcing
