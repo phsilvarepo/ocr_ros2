@@ -15,6 +15,10 @@ RUN pip3 install \
     "numpy==1.26.4" \
     "paddlepaddle==2.6.2" \
     "paddleocr==2.7.3"
+    
+RUN apt-get update && apt-get install -y \
+    ros-humble-vision-msgs \
+    && rm -rf /var/lib/apt/lists/*
 
 # 3. Pre-cache PaddleOCR models to prevent runtime downloads
 RUN python3 -c "\
@@ -29,7 +33,6 @@ WORKDIR /ros_ws
 RUN mkdir -p src
 
 # 5. Copy packages
-COPY ./ocr_interfaces /ros_ws/src/ocr_interfaces
 COPY ./ocr_node /ros_ws/src/ocr_node
 
 # 6. Build the workspace (interfaces first, then node)
@@ -41,7 +44,6 @@ RUN bash -c "\
 
 # 7. Environment variables
 ENV INPUT_TOPIC="/rgb"
-ENV OUTPUT_TOPIC="/ocr_detection"
 ENV CONFIDENCE_THRESHOLD="0.6"
 ENV FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 
