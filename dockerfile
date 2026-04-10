@@ -1,55 +1,49 @@
-FROM ros:humble-ros-base
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
-# 1. Install system dependencies
-RUN apt-get update && apt-get install -y \
-    python3-pip \
-    ros-humble-cv-bridge \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libgomp1 \
-    && apt-get clean \
+# Prevents ANY apt interactive prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+RUN apt-get update && apt-get install -y curl gnupg2 lsb-release && \
+    curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+      -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+      http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+      > /etc/apt/sources.list.d/ros2.list && \
+    apt-get update && apt-get install -y \
+      ros-humble-ros-base \
+      python3-colcon-common-extensions \
+      python3-pip \
+      ros-humble-cv-bridge \
+      ros-humble-vision-msgs \
+      libgl1-mesa-glx \
+      libglib2.0-0 \
+      libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Install Python packages
-RUN pip3 install \
+RUN pip3 install --no-cache-dir \
     "numpy==1.26.4" \
-    "paddlepaddle==2.6.2" \
-    "paddleocr==2.7.3"
-    
-RUN apt-get update && apt-get install -y \
-    ros-humble-vision-msgs \
-    && rm -rf /var/lib/apt/lists/*
+    "paddleocr==2.7.3" \
+    paddlepaddle-gpu==2.6.1.post117 \
+    -f https://www.paddlepaddle.org.cn/whl/linux/mkl/avx/stable.html
 
-# 3. Pre-cache PaddleOCR models to prevent runtime downloads
 RUN python3 -c "\
-import cv2, numpy as np; \
 from paddleocr import PaddleOCR; \
-ocr = PaddleOCR(use_angle_cls=True, lang='en'); \
-dummy = np.zeros((100, 300, 3), dtype=np.uint8); \
-ocr.ocr(dummy, cls=True)" || true
+PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False)"
 
-# 4. Setup ROS workspace
 WORKDIR /ros_ws
 RUN mkdir -p src
-
-# 5. Copy packages
 COPY ./ocr_node /ros_ws/src/ocr_node
 
-# 6. Build the workspace (interfaces first, then node)
 RUN bash -c "\
     source /opt/ros/humble/setup.bash && \
-    colcon build --packages-select ocr_interfaces && \
-    source install/setup.bash && \
-    colcon build --packages-select ocr_node"
+    colcon build"
 
-# 7. Environment variables
 ENV INPUT_TOPIC="/rgb"
 ENV CONFIDENCE_THRESHOLD="0.6"
-ENV FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64"
 
-# 8. Setup sourcing
 RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc && \
     echo "source /ros_ws/install/setup.bash" >> ~/.bashrc
 
-# 9. Launch the node
 ENTRYPOINT ["/bin/bash", "-c", "source /opt/ros/humble/setup.bash && source /ros_ws/install/setup.bash && ros2 run ocr_node ocr_node"]
